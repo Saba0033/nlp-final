@@ -2,8 +2,8 @@ import argparse
 import yaml
 from torch.utils.data import DataLoader
 
-from dataset import PairDataset
-from model import TextEncoder, infonce_loss
+from data.dataset import PairDataset
+from model.model import TextEncoder, infonce_loss
 
 
 def main():

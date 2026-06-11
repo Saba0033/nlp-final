@@ -2,8 +2,8 @@ import argparse
 import json
 import yaml
 
-from baseline import BM25Retriever
-from metrics import mrr, recall_at_k
+from baseline.bm25 import BM25Retriever
+from search.metrics import mrr, recall_at_k
 
 
 def load_test(path):
