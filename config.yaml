@@ -1,13 +1,39 @@
 data:
-  train_path: data/processed/train.jsonl
-  val_path: data/processed/val.jsonl
-  test_path: data/processed/test.jsonl
+  # which dataset this training run uses: squad or wiki
+  # train both models separately, then compare in eval
+  source: squad
+
+  wiki_dir: data/processed/wiki
+  squad_dir: data/processed/squad
+
+  # active paths (switch these + source before each training run)
+  train_path: data/processed/squad/train.jsonl
+  val_path: data/processed/squad/val.jsonl
+  test_path: data/processed/squad/test.jsonl
+
+  # wiki paths (use when source: wiki)
+  wiki_train_path: data/processed/wiki/train.jsonl
+  wiki_val_path: data/processed/wiki/val.jsonl
+  wiki_test_path: data/processed/wiki/test.jsonl
+
+  # squad paths (use when source: squad)
+  squad_train_path: data/processed/squad/train.jsonl
+  squad_val_path: data/processed/squad/val.jsonl
+  squad_test_path: data/processed/squad/test.jsonl
+
+  # j&m book chunks for the demo corpus
   corpus_path: data/processed/corpus.jsonl
-  max_length: 256
+
+  # cleaning / filtering
+  min_words: 40
+  max_words: 300
+  wiki_articles: 3000
+  seed: 42
 
 model:
   backbone: bert-base-uncased
   embedding_dim: 256
+  max_length: 256
 
 training:
   batch_size: 16
@@ -15,7 +41,7 @@ training:
   epochs: 3
   temperature: 0.05
   seed: 42
-  checkpoint_dir: checkpoints/
+  checkpoint_dir: checkpoints/squad/
 
 search:
   top_k: 5

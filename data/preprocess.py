@@ -1,97 +1,44 @@
-import json
-import random
-from pathlib import Path
+"""Run all preprocess steps, or one at a time:
 
-from datasets import load_dataset
+  python data/preprocess_squad.py
+  python data/preprocess_wiki.py
+  python data/preprocess_jm.py
+"""
 
-OUT = Path("data/processed")
-JM_BOOK = Path("data/raw/jm_book.txt")
-SEED = 42
-N_ARTICLES = 3000
-MIN_WORDS = 40
-MAX_WORDS = 300
+import argparse
 
-
-def write_jsonl(path, rows):
-    with open(path, "w") as f:
-        for row in rows:
-            f.write(json.dumps(row) + "\n")
-
-
-def wiki_to_pairs(articles):
-    by_article = []
-    for i, article in enumerate(articles):
-        title = article["title"]
-        paragraphs = [p.strip() for p in article["text"].split("\n") if p.strip()]
-        pairs = []
-        for j, para in enumerate(paragraphs):
-            words = para.split()
-            if len(words) < MIN_WORDS:
-                continue
-            if len(words) > MAX_WORDS:
-                para = " ".join(words[:MAX_WORDS])
-            pairs.append({
-                "query": title,
-                "document": para,
-                "doc_id": f"wiki-{i}-{j}",
-            })
-        if pairs:
-            by_article.append(pairs)
-    return by_article
-
-
-def split_articles(by_article):
-    random.seed(SEED)
-    random.shuffle(by_article)
-    n = len(by_article)
-    n_train = int(n * 0.8)
-    n_val = int(n * 0.1)
-
-    train = [p for group in by_article[:n_train] for p in group]
-    val = [p for group in by_article[n_train : n_train + n_val] for p in group]
-    test = [p for group in by_article[n_train + n_val :] for p in group]
-    return train, val, test
-
-
-def process_wiki():
-    print("downlaoding wikipedia...")
-    stream = load_dataset("wikimedia/wikipedia", "20231101.simple", split="train", streaming=True)
-    articles = []
-    for i, article in enumerate(stream):
-        articles.append(article)
-        if i + 1 >= N_ARTICLES:
-            break
-    by_article = wiki_to_pairs(articles)
-    train, val, test = split_articles(by_article)
-
-    for name, rows in [("train", train), ("val", val), ("test", test)]:
-        for row in rows:
-            row["split"] = name
-        write_jsonl(OUT / f"{name}.jsonl", rows)
-        print(f"{name}: {len(rows)} paurs")
-
-
-def process_jm():
-    if not JM_BOOK.exists():
-        print(f"no {JM_BOOK} - add book text for demo corpus")
-        return
-
-    words = JM_BOOK.read_text().split()
-    chunks = []
-    for i in range(0, len(words), 250):
-        chunk = " ".join(words[i : i + 250]).strip()
-        if chunk:
-            chunks.append(chunk)
-
-    corpus = [{"document": c, "doc_id": f"jm-{i}"} for i, c in enumerate(chunks)]
-    write_jsonl(OUT / "corpus.jsonl", corpus)
-    print(f"corpus: {len(corpus)} jm chunks")
+import preprocess_jm
+import preprocess_squad
+import preprocess_wiki
+from preprocess_utils import load_cfg, save_splits, split_by_groups
 
 
 def main():
-    OUT.mkdir(parents=True, exist_ok=True)
-    process_wiki()
-    process_jm()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--squad", action="store_true", help="only squad")
+    parser.add_argument("--wiki", action="store_true", help="only wiki")
+    parser.add_argument("--jm", action="store_true", help="only j&m demo corpus")
+    args = parser.parse_args()
+
+    run_all = not (args.squad or args.wiki or args.jm)
+    cfg = load_cfg()
+    seed = cfg["data"]["seed"]
+
+    if run_all or args.wiki:
+        print("wikipedia")
+        wiki_groups = preprocess_wiki.build_wiki(cfg)
+        save_splits(cfg["data"]["wiki_dir"], *split_by_groups(wiki_groups, seed))
+
+    if run_all or args.squad:
+        print("squad")
+        squad_groups = preprocess_squad.build_squad(cfg)
+        save_splits(cfg["data"]["squad_dir"], *split_by_groups(squad_groups, seed))
+
+    if run_all or args.jm:
+        print("demo corpus")
+        preprocess_jm.build_jm(cfg["data"]["corpus_path"])
+
+    print("done")
 
 
 if __name__ == "__main__":

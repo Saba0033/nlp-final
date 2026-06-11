@@ -12,6 +12,7 @@ venv/
 # Data & artifacts (large files)
 data/raw/
 data/processed/
+!data/processed/stats.json
 embeddings/
 checkpoints/
 logs/
