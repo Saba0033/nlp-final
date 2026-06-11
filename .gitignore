@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data & artifacts (large files)
+data/raw/
+data/processed/
+embeddings/
+checkpoints/
+logs/
+wandb/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Report build artifacts
+report/*.pdf.aux
+report/*.pdf.log

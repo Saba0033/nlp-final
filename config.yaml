@@ -1,0 +1,24 @@
+data:
+  train_path: data/processed/train.jsonl
+  val_path: data/processed/val.jsonl
+  test_path: data/processed/test.jsonl
+  corpus_path: data/processed/corpus.jsonl
+  max_length: 256
+
+model:
+  backbone: bert-base-uncased
+  embedding_dim: 256
+
+training:
+  batch_size: 16
+  lr: 2.0e-5
+  epochs: 3
+  temperature: 0.05
+  seed: 42
+  checkpoint_dir: checkpoints/
+
+search:
+  top_k: 5
+
+evaluation:
+  k_values: [1, 5, 10]
