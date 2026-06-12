@@ -162,11 +162,12 @@ doc_id             →  wiki-{article_idx}-{para_idx}
 **raw -> chunks (`preprocess_jm.py`):**
 - pdftotext-ის junk-ის გასუფთავება: page header-ები, "C HAPTER" banner-ები, copyright/draft ხაზები,
   page numbers, non-latin მაგალითები (chinese/greek)
-- ტექსტი ~250 სიტყვიან chunk-ებად დაყოფა (assignment ითხოვს 200-300 word chunks)
-- ძალიან პატარა tail chunk (<50 word) ამოვრიცხეთ
+- section header-ებზე დაყოფა (მაგ. `2.1`, `2.3.1`) - chunk-ები ერთ topic-ის ფარგლებში რჩება
+- წინადადებებზე დაყოფა, შემდეგ წინადადებების შეყრა სანამ 200-300 სიტყვა არ გახდება (არ ვჭრით წინადადების შუაში)
+- assignment ითხოვს 200-300 word chunks - ეს ზუსტად ამ დიაპაზონშია
 
-**output:** `data/processed/corpus.jsonl`, **155 chunk**, თითო ~250 word.
-format: `{"document": "...", "doc_id": "jm-0"}` - query/source/split არ აქვს, რადგან ეს index-ია, არა pair.
+**output:** `data/processed/corpus.jsonl` - 112 chunk, თითო 200-300 სიტყვა, უმეტესობა წინადადების ბოლოზე მთავრდება.
+format: `{"document": "...", "doc_id": "jm-0"}` - query/source/split არ აქვს, ეს მხოლოდ search index-ია.
 
 eval/demo-ზე query-ს ამ corpus-ში ვეძებთ (top-k chunks). training corpus (squad/wiki) აქ არ ერევა.
 

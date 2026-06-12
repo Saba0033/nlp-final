@@ -4,50 +4,107 @@ from pathlib import Path
 from preprocess_utils import clean_text, load_cfg, write_jsonl
 
 JM_BOOK = Path("data/raw/jm_book.txt")
-CHUNK_WORDS = 250
+MIN_WORDS = 200
+MAX_WORDS = 300
 
-# pdftotext leaves junk: page headers, chapter banners, page numbers, etc.
-# drop lines that match these before chunking.
+# pdf leaves garbage lines, filter them out
 HEADER = re.compile(r"speech and language processing.*jurafsky", re.I)
 CHAPTER_BANNER = re.compile(r"^\s*c\s*hapter", re.I)
 COPYRIGHT = re.compile(r"copyright|all\s+rights|draft of|^all$", re.I)
+SECTION = re.compile(r"^\d+(\.\d+)+\.?\s*$")  # 2.1, 2.3.1 etc
+SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 
 def looks_like_junk(line):
     s = line.strip()
     if not s:
         return True
+    if SECTION.match(s):
+        return False  # dont drop section numbers
     if HEADER.search(s) or CHAPTER_BANNER.search(s) or COPYRIGHT.search(s):
         return True
-    # page numbers / single tokens on their own line
+    # page nums and random short lines
     if len(s.split()) <= 2 and not s.endswith("."):
         return True
-    # mostly non-latin (chinese/greek examples) -> drop
+    # chinese/greek examples in book
     latin = sum(c.isascii() and c.isalpha() for c in s)
     if latin < len(s) * 0.5:
         return True
     return False
 
 
-def read_clean_text():
+def read_sections():
+    # split book into sections by 2.1, 2.2 ... headers
     lines = JM_BOOK.read_text(errors="ignore").splitlines()
-    kept = [ln for ln in lines if not looks_like_junk(ln)]
-    return " ".join(kept)
+    sections = []
+    buf = []
+    for line in lines:
+        s = line.strip()
+        if SECTION.match(s):
+            if buf:
+                sections.append(" ".join(buf))
+            buf = []
+            continue
+        if looks_like_junk(line):
+            continue
+        buf.append(s)
+    if buf:
+        sections.append(" ".join(buf))
+    return sections
+
+
+def split_sentences(text):
+    # split on . ? ! but keep sentence together
+    out = []
+    for bit in SENT_SPLIT.split(text.strip()):
+        bit = bit.strip()
+        if bit:
+            out.append(bit)
+    return out
+
+
+def merge_sentences(sentences):
+    # glue sentences until we hit ~200-300 words
+    chunks = []
+    buf = []
+    n = 0
+    for sent in sentences:
+        w = len(sent.split())
+        if w > MAX_WORDS:
+            # weird long line, just chop it (shouldnt hapen much)
+            if buf:
+                chunks.append(" ".join(buf))
+                buf, n = [], 0
+            words = sent.split()
+            for i in range(0, len(words), MAX_WORDS):
+                piece = " ".join(words[i:i + MAX_WORDS])
+                if len(piece.split()) >= MIN_WORDS:
+                    chunks.append(piece)
+            continue
+        if n + w > MAX_WORDS and n >= MIN_WORDS:
+            chunks.append(" ".join(buf))
+            buf, n = [], 0
+        buf.append(sent)
+        n += w
+    if n >= MIN_WORDS:
+        chunks.append(" ".join(buf))
+    return chunks
 
 
 def build_jm(out_path):
     if not JM_BOOK.exists():
         print(f"no {JM_BOOK} yet")
         return
-    words = read_clean_text().split()
     rows = []
-    for i in range(0, len(words), CHUNK_WORDS):
-        chunk = clean_text(" ".join(words[i:i + CHUNK_WORDS]))
-        # skip tiny tail chunks, they make bad search results
-        if chunk and len(chunk.split()) >= 50:
-            rows.append({"document": chunk, "doc_id": f"jm-{len(rows)}"})
+    for section in read_sections():
+        sents = split_sentences(section)
+        for chunk in merge_sentences(sents):
+            chunk = clean_text(chunk)
+            wc = len(chunk.split())
+            if MIN_WORDS <= wc <= MAX_WORDS:
+                rows.append({"document": chunk, "doc_id": f"jm-{len(rows)}"})
     write_jsonl(Path(out_path), rows)
-    print(f"corpus: {len(rows)} jm chunks (~{CHUNK_WORDS} words each)")
+    print(f"corpus: {len(rows)} chunks")
 
 
 def main():
