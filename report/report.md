@@ -1,471 +1,405 @@
-# Neural Search Engine - Data Report
+# Neural Search Engine - რეპორტი
 
-## 0. მოკლე overview
+## 1. მოკლე აღწერა
 
-პროექტი: neural search engine - user query → encoder → embedding → vector search → top-k chunks.
+ჩვენი პროექტი არის პატარა neural search engine. იდეა მარტივია: მომხმარებელი წერს query-ს,
+ჩვენ ამ query-ს გადავცემთ ჩვენს encoder მოდელს, ვიღებთ embedding-ს, შემდეგ vector search-ით
+ვპოულობთ ყველაზე მსგავს ტექსტურ მონაკვეთებს.
 
-ჩვენ contrastive learning-ს InfoNCE loss-ით ვაკეთებთ (sentence-transformers library-ს არ ვიყენებთ).
-encoder-ს **scratch-იდან** ვწვრთნით - pretrained მოდელი (BERT და ა.შ.) არ გამოგვიყენებია.
-BM25 baseline-თან შევადარებთ.
+```
+query → encoder → query embedding → vector search → top-k chunks
+```
 
+რამდენიმე მნიშვნელოვანი არჩევანი, რომელიც თავიდანვე გავაკეთეთ:
+
+- **encoder-ს scratch-იდან ვწვრთნით.** pretrained ენის მოდელს (BERT და მსგავსი) წონებს არ ვიყენებთ -
+  მოდელის წონები random-ად ინიციალდება და მთლიანად ჩვენს მონაცემებზე სწავლობს.
+- **sentence-transformers ბიბლიოთეკა არ გამოგვიყენებია** (დავალების პირობა). contrastive learning
+  თვითონ დავაიმპლემენტირეთ (InfoNCE loss).
+- baseline-ად **BM25** ავიღეთ და ჩვენს მოდელს სწორედ მას ვადარებთ.
+
+ერთ რამეს თავიდანვე ვამბობთ: მთავარი მიზანი არ იყო საუკეთესო performance. მიზანი იყო, რომ სწორად
+გაგვეგო ამოცანა, ტექნიკური არჩევანი დაგვესაბუთებინა და შედეგი გულახდილად გაგვეანალიზებინა. როგორც
+ქვემოთ ჩანს, ჩვენი scratch მოდელი BM25-ს წააგებს - და ეს მოსალოდნელი იყო.
 
 ---
 
-## 1. Pipeline - რა რიგით ხდება ყველაფერი
+## 2. Pipeline
 
-data დამუშავება 3 ეტაპადაა. quality analysis **preprocess-ის შემდეგ** ხდება, training-ის **წინ**.
+მთელი სამუშაო 3 ნაბიჯად დაიყო:
 
 ```
-[1] preprocess          →  jsonl files (train/val/test)
-[2] analyze (quality)   →  stats.json + console report
-[3] training/eval       →  PairDataset reads jsonl
+[1] preprocess   →  jsonl ფაილები (train/val/test) + J&M demo corpus
+[2] analyze      →  data quality შემოწმება (stats.json)
+[3] train + eval →  მოდელის წვრთნა, ევალუაცია, demo
 ```
 
-**რატომ analyze preprocess-ის შემდეგ:**
-- quality metrics (dup rate, length, leakage) მხოლოდ **processed** pairs-ზე აქვს აზრი
-- raw SQuAD/Wikipedia-ზე სხვა რიცხვები გამოვა - filtering/split-მდე leakage-ს ვერ ვნახავ
-- თუ preprocess-ს ხელახლა გავუშვებ (მაგ. min_words შევცვალეთ), analyze-იც ხელახლა უნდა გაეშვას
-
-**რომელი script როდის:**
-
-| ეტაპი | Script | Output |
-|-------|--------|--------|
-| 1a | `python data/preprocess_squad.py` | `data/processed/squad/*.jsonl` |
-| 1b | `python data/preprocess_wiki.py` | `data/processed/wiki/*.jsonl` |
-| 1c | `python data/preprocess_jm.py` | `data/processed/corpus.jsonl` (demo) |
-| 2 | `python data/analyze.py` | `data/processed/stats.json` |
-| 3 | training (`train.py`) | model checkpoints |
-
-analyze **ავტომატურად არ იძახება** preprocess-იდან - ცალკე step-ია, რომ preprocess-ის rebuild-ის დროს analyze-ის rerun optional იყოს. practice-ში ყოველთვის ორივე ერთად ვუშვებთ.
+`analyze` ცალკე ნაბიჯად დავტოვეთ preprocess-ის შემდეგ, რადგან quality მეტრიკებს (dup rate, length,
+leakage) მხოლოდ უკვე დამუშავებულ წყვილებზე აქვს აზრი. თუ preprocess-ს თავიდან გავუშვებთ, analyze-იც
+თავიდან უნდა გავუშვათ.
 
 ---
 
-## 2. რა data ავირჩიეთ
+## 3. მონაცემები
 
-### 2.1 რა dataset-ები ავირჩიეთ და რატომ
+### 3.1 რა მონაცემები ავირჩიეთ
+
+წვრთნისთვის ორი dataset ავირჩიეთ, ორივე საჯაროდ ხელმისაწვდომი:
 
 **SQuAD v1.1** (`rajpurkar/squad`)
-- assignment-ის "question-answer" ტიპს ემთხვევა
-- question = natural language query (~10 word avg)
-- context paragraph = searchable chunk
-- v1.1 აირჩიეთ v2-ის ნაცვლად, რადგან v2-ში unanswerable questions-ია - 45k+ row skip-დებოდა და retrieval positive pair-ისთვის ნაკლებად სასარგებლოა
+- query = კითხვა (ბუნებრივი ენის შეკითხვა, საშუალოდ ~10 სიტყვა)
+- document = პარაგრაფი, რომელშიც პასუხია
+- ეს ზუსტად ჩვენი ამოცანის ტიპია: კითხვა → შესაბამისი ტექსტის მონაკვეთი
+- v2-ის ნაცვლად v1.1 ავირჩიეთ, რადგან v2-ში ბევრი unanswerable კითხვაა და ის ჩვენს positive-pair
+  ლოგიკას არ ერგება
+
+**Wikipedia Simple English** (`wikimedia/wikipedia`, `20231101.simple`)
+- query = სტატიის სათაური (title)
+- document = სტატიის პარაგრაფი
+- ეს დავალების "სათაური → ტექსტი" მაგალითს ემთხვევა. ცალკე მოდელი ვწვრთნეთ ამ მონაცემებზე, რომ
+  გვენახა, განსხვავდება თუ არა შედეგი SQuAD-ისგან
+
+**Jurafsky & Martin წიგნი** (demo corpus)
+- ეს წვრთნაში არ მონაწილეობს. ეს არის მხოლოდ ის ტექსტი, რომელშიც demo-ს დროს ვეძებთ
+- წიგნის (Speech and Language Processing, SLP3 draft) 3 თავი გადმოვწერეთ PDF-ად, `pdftotext`-ით
+  ტექსტად ვაქციეთ და 200-300 სიტყვიან chunk-ებად დავჭერით
+
+### 3.2 query და document
+
+ყველა dataset-ში ფორმატი ერთნაირია - თითო ხაზი ერთი positive წყვილია (jsonl):
 
-**Wikipedia Simple English** (`wikimedia/wikipedia/20231101.simple`)
-- assignment-ის "title-main text" მაგალითს პირდაპირ ემთხვევა
-- ამაზეც ვწვრთნით - ცალკე მოდელი, შემდეგ SQuAD მოდელს ვადარებთ (იხ. 6.6)
-- query = title, ანუ ვნახავთ რამდენად განსხვავდება title-query retrieval question-query-ისგან
-
-**J&M book text** (demo corpus)
-- assignment-ის demo ამ წიგნზე უნდა იყოს (Speech and Language Processing, SLP3 draft)
-- training-ში **არ** მონაწილეობს - მხოლოდ search/demo-ს corpus-ია
-- SLP3-ის თავისუფალი draft chapters (PDF) გადმოვწერეთ, `pdftotext`-ით text-ად ვაქციეთ
-- დეტალები იხ. section 3.3
-
-### 2.2 რა არ გავითვალისწინეთ / რატომ
-
-- **SQuAD v2** - unanswerable questions, ჩვენს positive-pair setup-ს არ ემთხვევა
-- **Full English Wikipedia** - ძალიან დიდი, simple english საკმარისი comparison-ისთვის
-- **MS MARCO** - კარგი retrieval dataset-ია, SQuad 1.1 ვარჩიეთ
-- **Triplet format** - InfoNCE-ს წყვილები სჭირდება, hard negative data-ში არ ვინახავთ
-
----
-
-## 3. Raw data → our format
-
-### 3.1 SQuAD
-
-**Raw format** (HuggingFace, ~87,599 rows train split):
-
-| column | meaning |
-|--------|---------|
-| `id` | unique example id |
-| `title` | wikipedia article title |
-| `context` | one paragraph from article |
-| `question` | question about that paragraph |
-| `answers` | `{text: [...], answer_start: [...]}` |
-
-Raw task = reading comprehension (find exact answer span in paragraph).
-Our task = retrieval (find the right paragraph given question).
-
-**Transformation:**
-
-```
-question  →  query
-context   →  document
-id        →  doc_id
-(+ source, split added at save time)
-answers, title dropped (title used only for grouping/split)
-```
-
-**Example output row:**
-
-```json
-{
-  "query": "what three factors do scientists believe are the cause of sexual orientation?",
-  "document": "scientists do not know the exact cause of sexual orientation...",
-  "doc_id": "570f8a7d5ab6b81900390f03",
-  "source": "squad",
-  "split": "train"
-}
-```
-
-(text lowercased - იხ. section 4, scratch vocab-ის გამო)
-
-**Filtering-ის შემდეგ რიცხვები (train split):**
-
-| metric | value |
-|--------|-------|
-| pairs | 68,536 |
-| unique queries | 68,322 |
-| unique documents | 14,605 |
-
-raw train ~87,599 row იყო, სამივე split-ში სულ ~85,571 დარჩა - ანუ ~2k გაიფილტრა (too short/long/empty/dup).
-
-ერთ paragraph-ზე საშუალოდ ~4-5 question მოდის - ეს ჩანს dup_doc_rate-ში (ქვემოთ).
-
-### 3.2 Wikipedia
-
-**Raw format** (streamed, 15,000 articles):
-
-| column | meaning |
-|--------|---------|
-| `id` | article id |
-| `url` | wikipedia url |
-| `title` | article title |
-| `text` | full article, paragraphs separated by `\n` |
-
-**Transformation:**
-
-```
-title              →  query (same for all paragraphs in article)
-each paragraph     →  separate document row
-doc_id             →  wiki-{article_idx}-{para_idx}
-```
-
-**Filtering-ის შემდეგ (train split):**
-
-| metric | value |
-|--------|-------|
-| pairs | 38,070 |
-| unique queries | 8,870 |
-| unique documents | 38,020 |
-| articles used | 15,000 (config limit) |
-
-### 3.3 J&M demo corpus
-
-ეს არ არის training data. assignment ითხოვს demo-ს Jurafsky & Martin-ის წიგნზე
-(*Speech and Language Processing*), ამიტომ ცალკე searchable corpus გვჭირდება.
-
-**საიდან:** SLP3 draft chapters თავისუფლად ხელმისაწვდომია PDF-ად (stanford.edu).
-3 თავი გადმოვწერეთ (Words and Tokens, N-grams, Vector Semantics) და `pdftotext`-ით ტექსტად ვაქციეთ.
-
-**raw -> chunks (`preprocess_jm.py`):**
-- pdftotext-ის junk-ის გასუფთავება: page header-ები, "C HAPTER" banner-ები, copyright/draft ხაზები,
-  page numbers, non-latin მაგალითები (chinese/greek)
-- section header-ებზე დაყოფა (მაგ. `2.1`, `2.3.1`) - chunk-ები ერთ topic-ის ფარგლებში რჩება
-- წინადადებებზე დაყოფა, შემდეგ წინადადებების შეყრა სანამ 200-300 სიტყვა არ გახდება (არ ვჭრით წინადადების შუაში)
-- assignment ითხოვს 200-300 word chunks - ეს ზუსტად ამ დიაპაზონშია
-
-**output:** `data/processed/corpus.jsonl` - 112 chunk, თითო 200-300 სიტყვა, უმეტესობა წინადადების ბოლოზე მთავრდება.
-format: `{"document": "...", "doc_id": "jm-0"}` - query/source/split არ აქვს, ეს მხოლოდ search index-ია.
-
-eval/demo-ზე query-ს ამ corpus-ში ვეძებთ (top-k chunks). training corpus (squad/wiki) აქ არ ერევა.
-
----
-
-## 4. Cleaning და filtering
-
-მნიშვნელოვანი: **pretrained მოდელს არ ვიყენებთ** (BERT და ა.შ.). მოდელს scratch-იდან ვწვრთნით,
-ანუ tokenizer/vocab თვითონ უნდა ავაგოთ. ამიტომ cleaning უფრო მეტს აკეთებს ვიდრე pretrained-ის შემთხვევაში.
-
-### 4.1 რა გავაკეთეთ
-
-- ზედმეტი space-ების მოშორება - ტექსტი სუფთა რჩება
-- ცარიელი query ან document გამოვრიცხეთ
-- **lowercasing** - რადგან საკუთარი vocab გვაქვს, "The" და "the" ერთი token უნდა იყოს (pretrained რომ გვქონდეს, tokenizer თვითონ გააკეთებდა)
-- ძალიან მოკლე პარაგრაფები (<40 სიტყვა) ამოვრიცხეთ - პატარა chunk-ს retrieval-ში ცუდად ეძებს
-- ძალიან გრძელი დოკუმენტები (>300 სიტყვა) მოვჭერით - memory-ს ვზოგავთ, encoder-ის max_length-ში ეტევა
-- იგივე (query, document) წყვილი ერთხელ რჩება - duplicate rows training-ს არაფერს არ უმატებს
-
-### 4.2 რა არ გავაკეთეთ
-
-- stemming/lemmatization - მნიშვნელობა შეიძლება დაიკარგოს, vocab-ს თვითონ ვაშენებთ სიტყვებიდან
-- stopword removal - "the", "is" და ა.შ. retrieval-ში context-ის ნაწილია
-- feature selection - encoder representation-ს end-to-end სწავლობს
-
-min/max word config-შია (`config.yaml`: 40/300). რამე შევცვლეთ -> preprocess + analyze ხელახლა.
-
-### 4.3 vocabulary (scratch-ის გამო)
-
-pretrained tokenizer არ გვაქვს, ამიტომ vocab training text-იდან აიგება (Alex-ის training კოდში):
-- ყველა სიტყვა train split-იდან, frequency-ით დალაგებული
-- top N სიტყვა vocab-ში (`config.yaml`: `vocab_size`)
-- იშვიათი/უცნობი სიტყვა -> `<unk>` token
-- `<pad>` padding-ისთვის
-
-ეს მხოლოდ train-ზე უნდა აიგოს, val/test-ზე არა (თორემ leakage).
-
----
-
-## 5. Train/val/test split
-
-### 5.1 group-level split (80/10/10)
-
-split **row-level random არა** - **article/title group**-ის მიხედვით.
-
-SQuAD-ში ერთ `context` paragraph-ს 5-10 question შეიძლება ერთვებოდეს. თუ row-level split გავაკეთებდით:
-- იგივე paragraph train-ში და test-ში ერთად მოხვდებოდა
-- model "იმ paragraph-ს უკვე ნახა" test-ზე - inflated metrics (leakage)
-
-Wikipedia-ში group = article (title). იგივე title-ის paragraphs ერთ split-ში რჩება.
-
-**Verification:** `analyze.py` ამოწმებს train/test document overlap-ს.
-ორივე dataset-ზე: **overlap = 0** ✓
-
-### 5.2 split sizes
-
-**SQuAD:**
-
-| split | pairs | unique docs |
-|-------|-------|-------------|
-| train | 68,536 | 14,605 |
-| val | 9,155 | 1,921 |
-| test | 7,880 | 1,721 |
-
-**Wikipedia:**
-
-| split | pairs | unique docs |
-|-------|-------|-------------|
-| train | 38,070 | 38,020 |
-| val | 4,542 | 4,541 |
-| test | 5,136 | 5,136 |
-
-seed=42 (`config.yaml`) - reproducible split.
-
----
-
-## 6. Quality analysis - როდის, რა ვზომავთ, რას ვფიქრობთ
-
-### 6.1 როდის ხდება
-
-```bash
-python data/analyze.py   # preprocess-ის შემდეგ
-```
-
-`analyze.py` კითხულობს processed jsonl-ებს და წერს `data/processed/stats.json`-ს.
-console-ზეც print-ავს summary + 2 example pair-ს dataset-ზე.
-
-**analyze არ ცვლის data-ს** - read-only check-ია. თუ stats ცუდი გამოვიდა, preprocess config-ს ვცვლით და თავიდან ვაგენერირებთ.
-
-### 6.2 რა metrics-ს ვზომავთ
-
-| metric | meaning | why we care |
-|--------|---------|-------------|
-| `count` | total pairs in split | dataset size |
-| `unique_queries` | distinct query strings | low dup = diverse queries |
-| `unique_documents` | distinct doc strings | how many unique chunks |
-| `dup_query_rate` | 1 - unique_q/count | same query, different docs → InfoNCE false negatives in batch |
-| `dup_doc_rate` | 1 - unique_d/count | same doc, different queries → false negatives + eval indexing issue |
-| `query_words_avg/min/max` | query length stats | too short queries = weak signal |
-| `doc_words_avg/min/max` | doc length stats | check filtering worked |
-| `train_test_doc_overlap` | shared docs between train & test | leakage check, must be 0 |
-
-### 6.3 SQuAD quality - რა კარგია, რა problematic-ია
-
-**კარგი:**
-
-- query-ები natural questions-ია (~10 word average)
-- dup_query_rate ≈ 0 - თითქმის ყველა question unique-ია
-- question→paragraph retrieval პირდაპირ ემთხვევა ჩვენს search task-ს
-- train/test overlap = 0
-
-**problematic:**
-
-- dup_doc_rate ≈ 0.79 - ერთ paragraph ~5-6 question-ს ემსახურება
-- InfoNCE batch-ში: თუ 2 different query same document-ს positive-ად უკავშირდება, ერთი მეორის "negative"-ად შეიძლება ჩაითვალოს → **false negative**
-- eval-ის დროს: index-ში **unique documents** უნდა ჩავსვათ, არა 68k pair rows - თორემ იგივე paragraph 5-6 ჯერ index-ში იქნება
-
-**example false negative scenario (SQuAD):**
-
-```
-batch row 1: Q1 → DocA  (positive)
-batch row 2: Q2 → DocA  (positive, different question same paragraph)
-InfoNCE: Q1 embedding should be close to DocA, far from DocB...
-but Q2's DocA is also in batch as positive for Q2
-→ Q1 might treat Q2's positive doc as negative incorrectly
-```
-
-ეს SQuAD-ის სტრუქტურაა და არა ბაგი. მაინც SQuAD უკეთესია training-ისთვის, რადგან query-ის ხარისხი მაღალია.
-
-### 6.4 Wikipedia quality - comparison
-
-**კარგი:**
-
-- dup_doc_rate = 0 - თითო paragraph unique-ია
-- train/test overlap = 0
-
-**პრობლემატური:**
-
-- dup_query_rate ≈ 0.77 - title ერთ article-ზე რამდენიმე paragraph-ს ემსახურება
-- query_words_avg = 1.8 - title "france", "python" და ა.შ. - ძალიან მოკლე, weak semantic signal
-- retrieval task title-query-ით ნაკლებად რეალისტურია ნამდვილ ძიებებთან შედარებით
-
-**example (wiki):**
-
-```
-query: "france"
-doc1: "france is a country in europe..."
-doc2: "the capital of france is paris..."
-doc3: "french is the official language..."
-→ same query, 3 valid positives, InfoNCE confused again but from query side
-```
-
-### 6.5 side-by-side comparison
-
-| | SQuAD (train) | Wikipedia (train) |
-|--|---------------|-------------------|
-| pairs | 68,536 | 38,070 |
-| query avg words | 10.0 | 1.8 |
-| dup_query_rate | 0.0 | 0.77 |
-| dup_doc_rate | 0.79 | 0.0 |
-| false negative source | same doc, diff queries | same query, diff docs |
-| fits our search demo | yes (natural questions) | weak (titles only) |
-| fits assignment example | question-answer type | title-text type |
-
-### 6.6 final decision
-
-**Training: ორივე dataset-ზე, ცალ-ცალკე მოდელი. მოდელი scratch-იდან (pretrained არა).**
-
-იგივე architecture + hyperparams, მაგრამ ორი training run:
-1. **SQuAD model** - question → paragraph
-2. **Wiki model** - title → paragraph
-
-შემდეგ ორი მოდელის შედარება test set-ზე (Recall@k, MRR).
-
-**რატომ ორივე:**
-- data report-ში უკვე ვნახეთ რომ dataset quality განსხვავდება (query length, dup rates)
-- training-ითაც ვნახავთ რეალურად რომელი dataset-ი იძლევა უკეთეს retrieval-ს
-
-**scratch-ის გავლენა:**
-- მეტი data გვჭირდება (ამიტომ wiki_articles 3000 -> 15000)
-- vocab თვითონ ვაშენებთ, cleaning-ში lowercasing დავამატეთ
-- შედეგი pretrained-ზე უარესი იქნება. შესაძლოა BM25-საც ძლივს ჯობდეს ან წააგოს -
-  ეს ნორმალურია და report-ში სწორედ ამას ვაანალიზებთ (scratch model vs BM25)
-
-
----
-
-## 7. Code structure
-
-```
-data/
-├── preprocess_utils.py   # shared: clean, filter, split, write jsonl
-├── preprocess_squad.py   # SQuAD → data/processed/squad/
-├── preprocess_wiki.py      # Wikipedia → data/processed/wiki/
-├── preprocess_jm.py        # J&M book → data/processed/corpus.jsonl
-├── preprocess.py           # runs all (or --squad / --wiki / --jm)
-├── analyze.py              # quality check → stats.json  ← AFTER preprocess
-└── dataset.py              # PyTorch PairDataset for training
-```
-
-SQuAD და Wikipedia ცალკე script-ებადაა, რადგან:
-- ცალ-ცალკე preprocess და ცალ-ცალკე training run
-- squad rebuild-ისას wiki-ს ხელახლა გადმოწერა არ გვინდა
-- analyze ორივეს ცალ-ცალკე ამოწმებს
-
----
-
-## 8. როგორ გავუშვათ და სად ვნახოთ output
-
-```bash
-pip install -r requirements.txt
-
-# preprocess
-python data/preprocess_squad.py
-python data/preprocess_wiki.py
-python data/preprocess_jm.py     # demo corpus (needs data/raw/jm_book.txt)
-
-# quality check (preprocess-ის შემდეგ)
-python data/analyze.py
-```
-
-**სად ჩანს output:**
-
-| რა | სად |
-|----|-----|
-| SQuAD pairs | `data/processed/squad/train.jsonl`, `val.jsonl`, `test.jsonl` |
-| Wikipedia pairs | `data/processed/wiki/train.jsonl`, `val.jsonl`, `test.jsonl` |
-| demo corpus | `data/processed/corpus.jsonl` (155 J&M chunks) |
-| quality stats | `data/processed/stats.json` |
-| analyze print | terminal-ში (summary + 2 example pair) |
-
-jsonl ფაილი ხელით ნახვა:
-```bash
-head -n 2 data/processed/squad/train.jsonl
-head -n 2 data/processed/wiki/train.jsonl
-```
-
-stats.json:
-```bash
-cat data/processed/stats.json
-```
-
-**demo corpus გაკეთდა:** J&M SLP3-ის 3 თავი (PDF) -> `pdftotext` -> `data/raw/jm_book.txt` ->
-`preprocess_jm.py` -> `corpus.jsonl` (155 chunk). იხ. section 3.3.
-
-**scratch-ზე გადასვლის შემდეგ re-run:** cleaning-ში lowercasing დავამატეთ და `wiki_articles` 3000 -> 15000.
-preprocess + analyze ხელახლა გავუშვი, data განახლებულია (wiki ახლა 38,070 train pair).
-
-**git note:** `data/raw/` და `data/processed/` gitignore-შია (book copyrighted-ია), repo-ში მხოლოდ
-`stats.json` მიდის. წიგნის ხელახლა ასაგებად იხ. run ბრძანებები ზემოთ.
-
----
-
----
-
----
-
-**Alex - შენ ახლა ეს:**
-
-data მზადაა. **ორივე dataset-ზე ცალ-ცალკე დაატრენინგე**, შემდეგ მოდელების შედარება.
-
-**SQuAD paths:**
-- train: `data/processed/squad/train.jsonl`
-- val: `data/processed/squad/val.jsonl`
-- test: `data/processed/squad/test.jsonl`
-- checkpoint: `checkpoints/squad/`
-
-**Wiki paths:**
-- train: `data/processed/wiki/train.jsonl`
-- val: `data/processed/wiki/val.jsonl`
-- test: `data/processed/wiki/test.jsonl`
-- checkpoint: `checkpoints/wiki/`
-
-**როგორ გაუშვა (2 run):**
-1. `config.yaml`-ში `source: squad` + squad paths → `python train.py`
-2. `config.yaml`-ში `source: wiki` + wiki paths → `python train.py`
-
-**data format** (jsonl, თითო ხაზი = ერთი positive pair):
 ```json
 {"query": "...", "document": "...", "doc_id": "...", "source": "squad", "split": "train"}
 ```
 
-**მნიშვნელოვანი: pretrained მოდელი (BERT) არ ვიყენებთ.** encoder scratch-იდან, random init.
+- **query** - ის, რასაც მომხმარებელი წერდა (კითხვა ან სათაური)
+- **document** - სწორი ტექსტური მონაკვეთი, რომელიც ამ query-ს ეთანადება
 
-**შენ რა გააკეთო:**
-1. vocab build train split-იდან (top `vocab_size` words, `<unk>`, `<pad>`) - მხოლოდ train-ზე
-2. `model/model.py` - `encode()`: Embedding layer (random) → BiLSTM ან small Transformer → mean pool → projection
-3. `train.py` - training loop, InfoNCE loss, PairDataset (`data/dataset.py`) - **ორი run**
-4. `search/search.py` - `build_index()` - **unique documents** only
-5. TensorBoard logging (ცალკე log dir თითო მოდელისთვის)
+### 3.3 cleaning და filtering
 
-config-ში hyperparams უკვე მიწერია (`arch`, `vocab_size`, `lr`, `epochs` და ა.შ.) - შეცვალე თუ საჭიროა.
-scratch-ისთვის lr მაღალია (`1e-3`) და epochs მეტი (`15`), რადგან weights random-ია.
+- ზედმეტი space-ები მოვაშორეთ
+- ცარიელი query/document ამოვაგდეთ
+- ტექსტი lowercase-ში გადავიყვანეთ
+- ძალიან მოკლე document-ები (<40 სიტყვა) ამოვაგდეთ - პატარა chunk-ი retrieval-ში სუსტია
+- ძალიან გრძელი (>300 სიტყვა) მოვჭერით
+- ერთიდაიგივე წყვილი ერთხელ დავტოვეთ (დუბლიკატები არაფერს მატებს)
 
-**მე გავაკეთებ მერე:**
-- `evaluate.py` - ორივე მოდელის eval (Recall@k, MRR) + BM25 baseline
-- მოდელების შედარება report-ში
-- demo J&M book-ზე (როცა txt ჩავდებთ)
+რაც **არ** გავაკეთეთ: stemming, stopword removal, feature selection. encoder representation-ს
+end-to-end სწავლობს, ამიტომ ეს ნაბიჯები საჭირო არ იყო.
 
-stats ნახვა: `cat data/processed/stats.json`
-data ნახვა: `head -n 2 data/processed/squad/train.jsonl`
+**tokenizer-ზე შენიშვნა:** მოდელის encoder scratch-იდანაა, მაგრამ ტექსტის token-ებად დასაჭრელად
+`bert-base-uncased`-ის tokenizer გამოვიყენეთ (vocab 30522). ანუ pretrained არის *მხოლოდ tokenizer*
+(ის უბრალოდ სიტყვებს ჭრის id-ებად), მოდელის წონები კი მთლიანად random-იდან ისწავლა. ეს tokenizer
+uncased-ია, ამიტომ lowercasing კარგად ერგება.
+
+### 3.4 train / val / test split
+
+split **row-level random არ არის** - **group-level** არის (80/10/10).
+
+რატომ: SQuAD-ში ერთ პარაგრაფს ხშირად 5-6 კითხვა ერთვის. თუ random split გავაკეთებდით, იგივე
+პარაგრაფი მოხვდებოდა train-შიც და test-შიც, და მოდელი test-ზე "უკვე ნანახ" ტექსტს შეაფასებდა -
+ეს არის leakage და ხელოვნურად ზრდის მეტრიკებს. ამიტომ ჯერ პარაგრაფებს (Wiki-ში - სტატიებს)
+ვაჯგუფებთ და მერე ჯგუფებს ვყოფთ split-ებად. ასე ერთი document მხოლოდ ერთ split-შია.
+
+`analyze.py` ამოწმებს train/test document overlap-ს. ორივე dataset-ზე **overlap = 0**.
+
+split-ის ზომები (seed=42, reproducible):
+
+| dataset | train | val | test |
+|---------|-------|-----|------|
+| SQuAD | 68,536 | 9,155 | 7,880 |
+| Wikipedia | 38,070 | 4,542 | 5,136 |
+
+J&M demo corpus: **112 chunk**, თითო 200-300 სიტყვა.
+
+### 3.5 data quality ანალიზი
+
+`analyze.py` ითვლის რამდენიმე მეტრიკას და გვეხმარება გავიგოთ, რა გვაქვს ხელში:
+
+| | SQuAD (train) | Wikipedia (train) |
+|--|---------------|-------------------|
+| pairs | 68,536 | 38,070 |
+| query საშ. სიგრძე | 10.0 სიტყვა | 1.8 სიტყვა |
+| dup_query_rate | 0.00 | 0.77 |
+| dup_doc_rate | 0.79 | 0.00 |
+| train/test overlap | 0 | 0 |
+
+რას გვეუბნება ეს:
+
+- **SQuAD**-ში query-ები მრავალფეროვანი და გრძელია (კარგია), მაგრამ ერთი document რამდენიმე
+  კითხვას ემსახურება (`dup_doc_rate` 0.79).
+- **Wikipedia**-ში document-ები unique-ია, მაგრამ query (სათაური) ძალიან მოკლეა (1.8 სიტყვა) და
+  ხშირად მეორდება (`dup_query_rate` 0.77).
+
+ეს ორი მახასიათებელი InfoNCE-სთვის მნიშვნელოვანია, რადგან ჩვენ batch-ში არსებულ სხვა document-ებს
+negative-ად ვიყენებთ. თუ ერთ batch-ში ერთიდაიგივე document ორი სხვადასხვა query-ს დადებითად
+უკავშირდება, მოდელმა შეიძლება ერთი მათგანი მცდარად negative-ად ჩათვალოს (false negative). ეს
+SQuAD-ის სტრუქტურის თვისებაა, არა ბაგი - და ამიტომაც ვამოწმებთ წინასწარ.
+
+**დასკვნა მონაცემებზე:** ძირითად მოდელად SQuAD ავირჩიეთ, რადგან query-ის ხარისხი მაღალია და
+"კითხვა → პასუხის პარაგრაფი" პირდაპირ ჩვენი search ამოცანაა.
+
+---
+
+## 4. Baseline - BM25
+
+baseline-ად **BM25** ავიღეთ (`rank_bm25` ბიბლიოთეკით). ის კლასიკური keyword-based retrieval
+მეთოდია - ითვლის query-სა და document-ში სიტყვების დამთხვევას (term frequency + იშვიათი
+სიტყვების წონა), ყოველგვარი წვრთნის გარეშე.
+
+რატომ BM25:
+- მარტივია და ცნობილია როგორც ძლიერი baseline retrieval-ში
+- წვრთნა არ სჭირდება, ამიტომ კარგი "სამართლიანი" შესადარებელია ჩვენი მოდელისთვის
+- თუ ჩვენი ნასწავლი მოდელი BM25-ს ვერ აჯობებს, ეს თავისთავად საინტერესო და გასაანალიზებელი შედეგია
+
+BM25-ს ზუსტად იგივე index-ზე და იგივე test query-ებზე ვუშვებთ, რაც ჩვენს მოდელს - რომ შედარება
+სამართლიანი იყოს.
+
+---
+
+## 5. მოდელის არქიტექტურა
+
+encoder არის პატარა **Transformer**, scratch-იდან:
+
+1. token embedding (random init) + learned positional embedding
+2. Transformer encoder (padding mask-ით)
+3. mean pooling არა-padding token-ებზე
+4. linear projection საბოლოო embedding-ზე
+5. L2 normalize - რომ embedding-ები dot product-ით (cosine) შევადაროთ
+
+ერთიდაიგივე encoder ვამუშავებთ query-ზეც და document-ზეც.
+
+საბოლოო (ძირითადი) მოდელის hyperparams:
+
+| პარამეტრი | მნიშვნელობა |
+|-----------|-------------|
+| vocab size | 30522 (bert-base-uncased tokenizer) |
+| embedding dim | 256 |
+| attention heads | 4 |
+| layers | 2 |
+| feed-forward dim | 512 |
+| max length | 128 token |
+| projection (output emb) | 128 |
+| dropout | 0.3 |
+| პარამეტრების რაოდენობა | 8,933,504 |
+
+**რატომ ეს არქიტექტურა:** თავიდან უფრო დიდი მოდელი ვცადეთ (embedding 512, 8 head, 3 layer,
+~22M პარამეტრი). ის ძალიან სწრაფად overfit-და - train loss ცვიოდა, val loss კი არ მცირდებოდა.
+რადგან მონაცემები scratch მოდელისთვის შედარებით ცოტაა და overfitting პრობლემა იყო, **შევამცირეთ
+მოდელი** (256/4/2) და dropout 0.3-მდე ავწიეთ. პატარა მოდელი უკეთ განზოგადდა, ამიტომ ეს დავტოვეთ
+ძირითად მოდელად.
+
+Transformer ავირჩიეთ BiLSTM-ის ნაცვლად, რადგან attention-ს უკეთ შეუძლია query-ში მნიშვნელოვან
+სიტყვებზე ფოკუსირება, და ბევრად მარტივი დასაწერია PyTorch-ის მზა `nn.TransformerEncoder`-ით.
+
+---
+
+## 6. Contrastive learning - InfoNCE
+
+loss ფუნქციად **InfoNCE** ავირჩიეთ.
+
+იდეა: batch-ში გვაქვს N წყვილი (query, document). თითო query-სთვის მისი დაწყვილებული document
+არის **positive**, ხოლო იმავე batch-ში დანარჩენი document-ები - **negative** (in-batch negatives).
+ვითვლით query-სა და ყველა document-ს შორის similarity-ს, ვამრავლებთ temperature-ზე (0.05) და
+ვაკეთებთ cross-entropy-ს დიაგონალური (სწორი) წყვილების მიმართ. ასე ვამთხვევთ სწორ query/document
+წყვილებს და ვაცილებთ არასწორებს.
+
+```python
+def infonce_loss(query_emb, doc_emb, temperature=0.05):
+    logits = query_emb @ doc_emb.T / temperature
+    labels = torch.arange(len(query_emb), device=query_emb.device)
+    return F.cross_entropy(logits, labels)
+```
+
+**რატომ InfoNCE და არა Triplet/Contrastive loss:**
+- InfoNCE batch-ში ერთდროულად ბევრ negative-ს იყენებს, ამიტომ triplet loss-ზე ეფექტურია და
+  სწრაფად სწავლობს
+- triplet/contrastive loss-ს ცალკე hard negative-ების შერჩევა სჭირდება, ჩვენ კი მონაცემებში
+  მზა negative წყვილები არ გვაქვს - InfoNCE-ს ეს არ სჭირდება, batch-ი თვითონ აძლევს negative-ებს
+- ჩვენი (query, document) მონაცემები ზუსტად positive წყვილების ფორმატშია, რაც InfoNCE-ს იდეალურად ერგება
+
+---
+
+## 7. ტრენინგი
+
+### 7.1 setup
+
+- optimizer: AdamW
+- learning rate: 3e-4 (SQuAD)
+- batch size: 32
+- epochs: 10
+- temperature: 0.05
+- loss: InfoNCE
+- ლოგირება: TensorBoard (`logs/squad_v2/`, `logs/wiki/`) - train loss step-ზე და epoch-ზე, val loss epoch-ზე
+- საუკეთესო checkpoint ვინახავთ ყველაზე დაბალი validation loss-ის მიხედვით
+
+ქვემოთ მოცემული გრაფები და ცხრილები ამ TensorBoard log-ებიდანაა (`tensorboard --logdir logs/squad_v2`).
+
+### 7.2 SQuAD model - შედეგი
+
+| epoch | train loss | val loss |
+|-------|-----------|----------|
+| 1 | 2.7591 | 2.9022 |
+| 2 | 2.0957 | 2.8134 |
+| 3 | 1.6771 | 2.7790 |
+| 4 | 1.4206 | 2.8069 |
+| 5 | 1.2345 | 2.7474 |
+| 6 | 1.0983 | 2.7339 |
+| 7 | 0.9838 | 2.7137 |
+| 8 | 0.8924 | 2.7225 |
+| 9 | 0.8023 | 2.7315 |
+| 10 | 0.7348 | **2.7040** |
+
+![SQuAD train/val loss](training_squad.png)
+
+გრაფზე ჩანს: train loss (ლურჯი) სწრაფად ეცემა, val loss (ნარინჯისფერი) კი თითქმის ჰორიზონტალურია
+~2.7-ზე. ეს **overfitting-ის** ნათელი მაგალითია - მოდელი train მონაცემებს კარგად სწავლობს, მაგრამ
+ახალ მონაცემებზე ვერ განზოგადებს. საუკეთესო val loss (2.7040) მე-10 epoch-ზე იყო, ეს checkpoint
+(`checkpoints/squad_v2/best_model.pt`) დავტოვეთ.
+
+### 7.3 Wikipedia model
+
+იგივე არქიტექტურით ცალკე მოდელი ვწვრთნეთ Wiki-ზე (lr 1e-4-მდე დავწიეთ, რადგან query-ები მოკლე და
+ბუნდოვანია).
+
+| epoch | train loss | val loss |
+|-------|-----------|----------|
+| 1 | 3.0719 | 3.7758 |
+| 2 | 2.6611 | 4.1432 |
+| 3 | 2.4369 | 4.3505 |
+| 4 | 2.2922 | 4.5351 |
+| 5 | 2.1439 | 4.7087 |
+| 6 | 2.0424 | 4.8819 |
+| 7 | 1.9374 | 4.8831 |
+| 8 | 1.8443 | 5.0834 |
+| 9 | 1.7605 | 5.2154 |
+| 10 | 1.6788 | 5.0706 |
+
+![Wiki train/val loss](training_wiki.png)
+
+აქ სულ სხვა სურათია: train loss იცემა, მაგრამ val loss **იზრდება** (3.78 → 5.07). ანუ მოდელი
+train-ს იზეპირებს, მაგრამ generalization უარესდება. მიზეზი ისაა, რომ Wiki query (1-2 სიტყვიანი
+სათაური) contrastive ამოცანისთვის ძალიან სუსტი სიგნალია. ამიტომ Wiki მოდელი საბოლოო ევალუაციასა და
+demo-ში **არ გამოვიყენეთ** - შედეგებს მხოლოდ SQuAD მოდელზე ვაჩვენებთ.
+
+---
+
+## 8. ევალუაცია
+
+### 8.1 eval set და მეტრიკები
+
+ევალუაცია SQuAD test split-ზე გავაკეთეთ. index-ში **unique document-ები** ჩავსვით (1721 ცალი),
+არა 7880 დუბლირებული row - თორემ იგივე პარაგრაფი ბევრჯერ იქნებოდა index-ში. შემდეგ თითო test
+query-სთვის ვითვლით embedding-ს და cosine similarity-ით ვალაგებთ document-ებს.
+
+მეტრიკები:
+- **Recall@1** - სწორი document პირველ ადგილზე მოხვდა თუ არა
+- **Recall@5** - სწორი document პირველ 5-ში მოხვდა თუ არა
+- **MRR@5** - სწორი document-ის reciprocal rank (top-5-ში)
+
+ეს მეტრიკები ავირჩიეთ, რადგან retrieval-ში ყველაზე მნიშვნელოვანია სწორი პასუხი რანჟირების
+თავში მოხვდეს. Recall@1 აჩვენებს "ზუსტ მოხვედრას", Recall@5 - "სასარგებლო top-k-ში მოხვედრას",
+MRR კი თვითონ პოზიციას აფასებს.
+
+### 8.2 შედეგები
+
+| მეთოდი | Recall@1 | Recall@5 | MRR@5 |
+|--------|----------|----------|-------|
+| BM25 (baseline) | **0.623** | **0.791** | **0.689** |
+| ჩვენი მოდელი (SQuAD) | 0.244 | 0.448 | 0.320 |
+
+### 8.3 ანალიზი
+
+BM25 ჩვენს მოდელს მკაფიოდ **აჯობებს** ყველა მეტრიკაში. ეს იმედგაცრუებად შეიძლება მოგვეჩვენოს,
+მაგრამ სრულიად მოსალოდნელი იყო და რამდენიმე ნათელ მიზეზს აქვს:
+
+1. **scratch მოდელი + ცოტა მონაცემები.** BM25-ს წვრთნა არ სჭირდება, ჩვენი მოდელი კი ნულიდან უნდა
+   ისწავლოს ენა ~68k წყვილზე - ეს ცოტაა იმისთვის, რომ Transformer-მა კარგი representation ისწავლოს.
+2. **overfitting** (იხ. training loss curve) - მოდელი train-ს იზეპირებს, ვერ განზოგადებს.
+3. **SQuAD-ში პასუხი ხშირად query-ის სიტყვებს შეიცავს** - ეს keyword overlap-ს ეხმარება, ანუ
+   BM25-ისთვის "ადვილი" dataset-ია.
+
+მნიშვნელოვანია: მოდელი მაინც **სწავლობს რაღაცას** - Recall@5 0.448 ნიშნავს, რომ თითქმის ნახევარ
+შემთხვევაში სწორი document top-5-შია. ანუ embedding-ები რეალურ სემანტიკურ სიგნალს იჭერენ, უბრალოდ
+BM25-ის სიზუსტეს ვერ აღწევენ.
+
+---
+
+## 9. Demo
+
+demo (`demo.py`) Jurafsky & Martin წიგნის corpus-ზე (112 chunk) მუშაობს. მომხმარებელი წერს query-ს,
+მოდელი ითვლის მის embedding-ს, ადარებს ყველა chunk-ს და აბრუნებს top-k-ს.
+
+გაშვება:
+
+```bash
+python demo.py                                          # interactive
+python demo.py --query "what is tokenization?"          # ერთი query
+python demo.py --model wiki                              # სხვა checkpoint
+```
+
+მაგალითი - query: *"what is probability?"* - top შედეგებში მოდელმა დააბრუნა chunk-ები classifier
+probability-სა და perplexity/entropy-ზე (სწორი თემა), თუმცა შუაში არარელევანტური chunk-ებიც
+შემოერია. ეს ზუსტად ემთხვევა ჩვენს მეტრიკებს (Recall@1 ≈ 0.24): მოდელი ხშირად პოულობს რელევანტურ
+ტექსტს, მაგრამ არა ყოველთვის ზუსტად პირველ ადგილზე.
+
+> შენიშვნა: მოდელი input-ს 128 token-მდე ჭრის, J&M chunk-ები კი 200-300 სიტყვაა, ამიტომ demo-ში
+> თითო chunk-ის მხოლოდ პირველი ~128 token encode-დება. demo-სთვის ეს საკმარისია.
+
+---
+
+## 10. დასკვნა
+
+- ავაგეთ სრული neural search pipeline: data → encoder (scratch) → InfoNCE წვრთნა → vector search → demo.
+- contrastive learning (InfoNCE) თვითონ დავაიმპლემენტირეთ, sentence-transformers-ის გარეშე.
+- ჩვენი მოდელი BM25-ს წააგებს (Recall@1 0.24 vs 0.62). ეს მოსალოდნელი იყო: scratch მოდელი,
+  ცოტა მონაცემი და overfitting.
+- მთავარი, რაც ვისწავლეთ: contrastive retrieval-ში მონაცემების ხარისხი და რაოდენობა ისეთივე
+  მნიშვნელოვანია, როგორც არქიტექტურა; და ძლიერი keyword baseline (BM25) ადვილი დასამარცხებელი არ არის.
+
+**რა გავაუმჯობესებდით:**
+- მეტი საწვრთნელი მონაცემი
+- hard negatives (უფრო ინფორმაციული negative წყვილები InfoNCE-სთვის)
+- მეტი regularization / early stopping overfitting-ის წინააღმდეგ
+- max length 128-ზე მეტი, რომ გრძელი document სრულად დაიფაროს
+
+---
+
+## 11. კოდის სტრუქტურა და გაშვება
+
+```
+config.yaml              # data pipeline-ის კონფიგი (paths, min/max words, seed)
+data/
+├── preprocess_squad.py  # SQuAD → data/processed/squad/
+├── preprocess_wiki.py   # Wikipedia → data/processed/wiki/
+├── preprocess_jm.py     # J&M წიგნი → data/processed/corpus.jsonl
+├── preprocess.py        # ყველას ერთად უშვებს
+├── preprocess_utils.py  # საერთო ფუნქციები (clean, filter, split, write)
+└── analyze.py           # data quality → stats.json
+model_training.ipynb     # encoder + InfoNCE + წვრთნა (SQuAD და Wiki)
+evaluation.ipynb         # Recall@k, MRR@5, BM25 შედარება
+demo.py                  # J&M corpus-ზე ძიება ნასწავლი მოდელით
+report/report.md         # ეს რეპორტი
+```
+
+გაშვება:
+
+```bash
+pip install -r requirements.txt
+
+# 1. preprocess
+python data/preprocess_squad.py
+python data/preprocess_wiki.py
+python data/preprocess_jm.py
+
+# 2. data quality
+python data/analyze.py
+
+# 3. წვრთნა / ევალუაცია - model_training.ipynb და evaluation.ipynb
+# 4. demo
+python demo.py
+```
+
+**git შენიშვნა:** `data/raw/`, `data/processed/` და `checkpoints/` gitignore-შია (დიდი ფაილები /
+წიგნი copyrighted-ია), repo-ში მხოლოდ `stats.json` მიდის. მონაცემების თავიდან ასაგებად ზემოთ
+მოცემული preprocess ბრძანებები გაუშვით.

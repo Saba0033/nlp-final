@@ -31,7 +31,7 @@ def split_stats(rows):
     uniq_q = len(set(r["query"] for r in rows))
     uniq_d = len(set(r["document"] for r in rows))
 
-    # if same query/doc repeats a lot, infonce gets false negatives in batch
+    # if same query/doc repeates a lot, infonce gets false negatives in batch
     dup_query_rate = round(1 - uniq_q / len(rows), 2)
     dup_doc_rate = round(1 - uniq_d / len(rows), 2)
 
@@ -48,7 +48,7 @@ def split_stats(rows):
     }
 
 
-def leakage(train_rows, test_rows):
+def leakge(train_rows, test_rows):
     train_docs = set(r["document"] for r in train_rows)
     test_docs = set(r["document"] for r in test_rows)
     return len(train_docs & test_docs)
@@ -64,7 +64,7 @@ def analyze_dataset(data_dir):
             loaded[split] = read_jsonl(path)
             out["splits"][split] = split_stats(loaded[split])
     if "train" in loaded and "test" in loaded:
-        out["train_test_doc_overlap"] = leakage(loaded["train"], loaded["test"])
+        out["train_test_doc_overlap"] = leakge(loaded["train"], loaded["test"])
     out["_train_rows"] = loaded.get("train", [])
     return out
 

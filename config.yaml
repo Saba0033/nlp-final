@@ -1,56 +1,13 @@
 data:
-  # which dataset this training run uses: squad or wiki
-  # train both models separately, then compare in eval
-  source: squad
-
+  # output dirs for the processed (query, document) pairs
   wiki_dir: data/processed/wiki
   squad_dir: data/processed/squad
 
-  # active paths (switch these + source before each training run)
-  train_path: data/processed/squad/train.jsonl
-  val_path: data/processed/squad/val.jsonl
-  test_path: data/processed/squad/test.jsonl
-
-  # wiki paths (use when source: wiki)
-  wiki_train_path: data/processed/wiki/train.jsonl
-  wiki_val_path: data/processed/wiki/val.jsonl
-  wiki_test_path: data/processed/wiki/test.jsonl
-
-  # squad paths (use when source: squad)
-  squad_train_path: data/processed/squad/train.jsonl
-  squad_val_path: data/processed/squad/val.jsonl
-  squad_test_path: data/processed/squad/test.jsonl
-
-  # j&m book chunks for the demo corpus
+  # j&m book chunks for the demo corpus (search index, not training)
   corpus_path: data/processed/corpus.jsonl
 
   # cleaning / filtering
   min_words: 40
   max_words: 300
-  # scratch model needs more data, so we pull more wiki articles
   wiki_articles: 15000
   seed: 42
-
-# no pretrained model. we build encoder from scratch (random init) + own vocab
-model:
-  arch: bilstm          # bilstm or transformer (Alex decides)
-  vocab_size: 30000     # built from train split
-  embedding_dim: 256    # output embedding size for search
-  word_dim: 300         # word embedding layer dim
-  hidden_dim: 256
-  num_layers: 2
-  max_length: 256
-
-training:
-  batch_size: 32
-  lr: 1.0e-3            # higher than fine-tune, weights are random
-  epochs: 15           # scratch needs more epochs than fine-tune
-  temperature: 0.05
-  seed: 42
-  checkpoint_dir: checkpoints/squad/
-
-search:
-  top_k: 5
-
-evaluation:
-  k_values: [1, 5, 10]

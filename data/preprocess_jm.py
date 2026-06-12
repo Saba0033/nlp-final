@@ -7,7 +7,7 @@ JM_BOOK = Path("data/raw/jm_book.txt")
 MIN_WORDS = 200
 MAX_WORDS = 300
 
-# pdf leaves garbage lines, filter them out
+# pdf leaves garbage lines, fitler them out
 HEADER = re.compile(r"speech and language processing.*jurafsky", re.I)
 CHAPTER_BANNER = re.compile(r"^\s*c\s*hapter", re.I)
 COPYRIGHT = re.compile(r"copyright|all\s+rights|draft of|^all$", re.I)
@@ -34,7 +34,7 @@ def looks_like_junk(line):
 
 
 def read_sections():
-    # split book into sections by 2.1, 2.2 ... headers
+    # split book into sections by 2.1, 2.2 ... headres
     lines = JM_BOOK.read_text(errors="ignore").splitlines()
     sections = []
     buf = []

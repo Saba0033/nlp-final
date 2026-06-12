@@ -17,7 +17,7 @@ def build_squad(cfg):
     print("downlaoding squad...")
     ds = load_dataset("rajpurkar/squad", split="train")
 
-    # question -> context paragraph. answer span not needed for us
+    # question -> context paragaph. answer span not needed for us
     by_title = {}
     for ex in ds:
         query = clean_text(ex["question"])
