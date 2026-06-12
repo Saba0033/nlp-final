@@ -27,18 +27,24 @@ data:
   # cleaning / filtering
   min_words: 40
   max_words: 300
-  wiki_articles: 3000
+  # scratch model needs more data, so we pull more wiki articles
+  wiki_articles: 15000
   seed: 42
 
+# no pretrained model. we build encoder from scratch (random init) + own vocab
 model:
-  backbone: bert-base-uncased
-  embedding_dim: 256
+  arch: bilstm          # bilstm or transformer (Alex decides)
+  vocab_size: 30000     # built from train split
+  embedding_dim: 256    # output embedding size for search
+  word_dim: 300         # word embedding layer dim
+  hidden_dim: 256
+  num_layers: 2
   max_length: 256
 
 training:
-  batch_size: 16
-  lr: 2.0e-5
-  epochs: 3
+  batch_size: 32
+  lr: 1.0e-3            # higher than fine-tune, weights are random
+  epochs: 15           # scratch needs more epochs than fine-tune
   temperature: 0.05
   seed: 42
   checkpoint_dir: checkpoints/squad/

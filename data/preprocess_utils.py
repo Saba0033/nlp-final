@@ -12,8 +12,8 @@ def load_cfg():
 
 
 def clean_text(text):
-    # just fix extra spaces, bert handles the rest
-    return re.sub(r"\s+", " ", text).strip()
+    # no pretrained tokenizer, so we lowercase ourselves + fix extra spaces
+    return re.sub(r"\s+", " ", text).strip().lower()
 
 
 def n_words(text):
