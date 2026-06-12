@@ -1,0 +1,116 @@
+{
+  "wikipedia": {
+    "name": "wiki",
+    "splits": {
+      "train": {
+        "count": 38070,
+        "unique_queries": 8870,
+        "unique_documents": 38020,
+        "dup_query_rate": 0.77,
+        "dup_doc_rate": 0.0,
+        "query_words_avg": 1.8,
+        "query_words_min_max": [
+          1,
+          11
+        ],
+        "doc_words_avg": 73.1,
+        "doc_words_min_max": [
+          40,
+          300
+        ]
+      },
+      "val": {
+        "count": 4542,
+        "unique_queries": 1108,
+        "unique_documents": 4541,
+        "dup_query_rate": 0.76,
+        "dup_doc_rate": 0.0,
+        "query_words_avg": 1.8,
+        "query_words_min_max": [
+          1,
+          11
+        ],
+        "doc_words_avg": 72.9,
+        "doc_words_min_max": [
+          40,
+          300
+        ]
+      },
+      "test": {
+        "count": 5136,
+        "unique_queries": 1109,
+        "unique_documents": 5136,
+        "dup_query_rate": 0.78,
+        "dup_doc_rate": 0.0,
+        "query_words_avg": 1.8,
+        "query_words_min_max": [
+          1,
+          10
+        ],
+        "doc_words_avg": 72.9,
+        "doc_words_min_max": [
+          40,
+          300
+        ]
+      }
+    },
+    "train_test_doc_overlap": 0
+  },
+  "squad": {
+    "name": "squad",
+    "splits": {
+      "train": {
+        "count": 68536,
+        "unique_queries": 68322,
+        "unique_documents": 14605,
+        "dup_query_rate": 0.0,
+        "dup_doc_rate": 0.79,
+        "query_words_avg": 10.0,
+        "query_words_min_max": [
+          1,
+          40
+        ],
+        "doc_words_avg": 121.8,
+        "doc_words_min_max": [
+          40,
+          300
+        ]
+      },
+      "val": {
+        "count": 9155,
+        "unique_queries": 9122,
+        "unique_documents": 1921,
+        "dup_query_rate": 0.0,
+        "dup_doc_rate": 0.79,
+        "query_words_avg": 10.2,
+        "query_words_min_max": [
+          1,
+          36
+        ],
+        "doc_words_avg": 122.7,
+        "doc_words_min_max": [
+          40,
+          300
+        ]
+      },
+      "test": {
+        "count": 7880,
+        "unique_queries": 7862,
+        "unique_documents": 1721,
+        "dup_query_rate": 0.0,
+        "dup_doc_rate": 0.78,
+        "query_words_avg": 10.1,
+        "query_words_min_max": [
+          3,
+          33
+        ],
+        "doc_words_avg": 117.7,
+        "doc_words_min_max": [
+          40,
+          300
+        ]
+      }
+    },
+    "train_test_doc_overlap": 0
+  }
+}
