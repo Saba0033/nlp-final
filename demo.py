@@ -10,12 +10,18 @@ query -> encoder -> embedding -> cosine search over J&M chunks -> top-k
 
 import argparse
 import json
+import os
+import warnings
+
+warnings.filterwarnings("ignore")  # quiet the pytorch nested-tensor notice so demo output stays clean
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, logging
+
+logging.set_verbosity_error()  # hide the "longer than 512 tokens" warning, we window it ourselves
 
 CORPUS = "data/processed/corpus.jsonl"
 VOCAB_SIZE, MAX_LEN, PROJ = 30522, 128, 128
@@ -63,6 +69,24 @@ class TransformerEncoder(nn.Module):
                       max_length=MAX_LEN, return_tensors="pt").to(device)
         return self.forward(t["input_ids"], t["attention_mask"])
 
+    @torch.no_grad()
+    def encode_long(self, texts):
+        # j&m chunks are 200-300 words = way more than 128 tokens. if we just
+        # truncate we throw away half the chunk. instead we cut each chunk into
+        # 128-token windows, encode each window, and average them. this way the
+        # whole chunk gets represented, not only its beginning.
+        out = []
+        for text in texts:
+            ids = tokenizer(text, return_tensors="pt")["input_ids"][0]
+            windows = [ids[i:i + MAX_LEN] for i in range(0, len(ids), MAX_LEN)]
+            embs = []
+            for w in windows:
+                w = w.unsqueeze(0).to(device)
+                embs.append(self.forward(w, torch.ones_like(w)))
+            mean = torch.stack(embs).mean(0)
+            out.append(F.normalize(mean, dim=-1))
+        return torch.cat(out)
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -77,10 +101,17 @@ def main():
     model.eval()
 
     docs = [json.loads(line)["document"] for line in open(CORPUS)]
-    doc_emb = np.concatenate(
-        [model.encode(docs[i:i + 32]).cpu().numpy() for i in range(0, len(docs), 32)]
-    )
-    print(f"[{args.model}] indexed {len(docs)} J&M chunks on {device}")
+
+    # encoding the whole book every run is slow, so cache the doc embeddings.
+    # if the corpus size changed we just rebuild (cheap safety check).
+    cache = f"data/processed/corpus_emb_{args.model}.npy"
+    if os.path.exists(cache) and np.load(cache).shape[0] == len(docs):
+        doc_emb = np.load(cache)
+        print(f"[{args.model}] loaded cached index ({len(docs)} chunks)")
+    else:
+        print(f"[{args.model}] encoding {len(docs)} J&M chunks on {device}...")
+        doc_emb = model.encode_long(docs).cpu().numpy()
+        np.save(cache, doc_emb)
 
     def search(query):
         q_emb = model.encode([query]).cpu().numpy()[0]

@@ -13,6 +13,8 @@ CHAPTER_BANNER = re.compile(r"^\s*c\s*hapter", re.I)
 COPYRIGHT = re.compile(r"copyright|all\s+rights|draft of|^all$", re.I)
 SECTION = re.compile(r"^\d+(\.\d+)+\.?\s*$")  # 2.1, 2.3.1 etc
 SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+YEAR = re.compile(r"^(19|20)\d\d[.,;:]?$")  # 2017, 1999. etc
+NUMBER = re.compile(r"^\d+[.,;:]?$")
 
 
 def looks_like_junk(line):
@@ -63,6 +65,16 @@ def split_sentences(text):
     return out
 
 
+def is_reference_junk(chunk):
+    # whole book has a big index at the end + bibliography after every chapter.
+    # those turn into chunks full of years ("2017.") and bare page numbers, which
+    # are useless to search. drop them so the demo corpus is only real content.
+    toks = chunk.split()
+    years = sum(1 for w in toks if YEAR.match(w))
+    nums = sum(1 for w in toks if NUMBER.match(w))
+    return years >= 6 or nums / len(toks) > 0.12
+
+
 def merge_sentences(sentences):
     # glue sentences until we hit ~200-300 words
     chunks = []
@@ -101,7 +113,7 @@ def build_jm(out_path):
         for chunk in merge_sentences(sents):
             chunk = clean_text(chunk)
             wc = len(chunk.split())
-            if MIN_WORDS <= wc <= MAX_WORDS:
+            if MIN_WORDS <= wc <= MAX_WORDS and not is_reference_junk(chunk):
                 rows.append({"document": chunk, "doc_id": f"jm-{len(rows)}"})
     write_jsonl(Path(out_path), rows)
     print(f"corpus: {len(rows)} chunks")
