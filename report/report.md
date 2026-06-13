@@ -23,9 +23,10 @@ query -> encoder -> query embedding -> vector search -> top-k chunks
 ## 2. Pipeline
 
 ```
-[1] preprocess   ->  jsonl ფაილები (train/val/test) + J&M demo corpus
-[2] analyze      ->  data quality შემოწმება (stats.json)
-[3] train + eval ->  მოდელის წვრთნა, ევალუაცია, demo
+[1] preprocess      ->  jsonl ფაილები (train/val/test) + J&M demo corpus
+[2] analyze         ->  data quality შემოწმება (stats.json)
+[2b] data_analysis  ->  SQuAD-ის გრაფიკები რეპორტისთვის (report/*.png)
+[3] train + eval    ->  მოდელის წვრთნა, ევალუაცია, demo
 ```
 
 `analyze` ცალკე ნაბიჯად დავტოვეთ preprocess-ის შემდეგ, რადგან quality მეტრიკებს (dup rate, length,
@@ -106,7 +107,9 @@ J&M demo corpus: **718 chunk** (მთელი წიგნი), თითო 2
 
 ### 3.5 data quality ანალიზი
 
-`analyze.py` ითვლის რამდენიმე მეტრიკას და გვეხმარება გავიგოთ, რა გვაქვს ხელში:
+`analyze.py` ითვლის რამდენიმე მეტრიკას და გვეხმარება გავიგოთ, რა გვაქვს ხელში. გრაფიკები
+(`data_lengths.png`, `data_split.png` და სხვ.) `data_analysis.ipynb`-ით გავაკეთეთ SQuAD train
+მონაცემებზე.
 
 | | SQuAD (train) | Wikipedia (train) |
 |--|---------------|-------------------|
@@ -429,6 +432,7 @@ data/
 ├── preprocess.py        # ყველას ერთად უშვებს
 ├── preprocess_utils.py  # საერთო ფუნქციები (clean, filter, split, write)
 └── analyze.py           # data quality → stats.json
+data_analysis.ipynb      # SQuAD გრაფიკები → report/*.png
 model_training.ipynb     # encoder + InfoNCE + წვრთნა (SQuAD და Wiki)
 evaluation.ipynb         # Recall@k, MRR@5, BM25 შედარება
 demo.py                  # J&M corpus-ზე ძიება ნასწავლი მოდელით
@@ -451,6 +455,7 @@ python data/preprocess_jm.py
 
 # 2. data quality
 python data/analyze.py
+# data_analysis.ipynb - გრაფიკები რეპორტისთვის (optional, SQuAD-ზე)
 
 # 3. წვრთნა / ევალუაცია - model_training.ipynb და evaluation.ipynb
 # 4. demo
