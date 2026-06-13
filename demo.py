@@ -68,10 +68,7 @@ class TransformerEncoder(nn.Module):
 
     @torch.no_grad()
     def encode_long(self, texts):
-        # j&m chunks are 200-300 words, way more than 128 tokens. if we just
-        # truncate we throw away half the chunk. instead we cut each chunk into
-        # 128-token windows, encode each window, and average them. this way the
-        # whole chunk gets represented, not only its beginning.
+        # long chunks: encode 128-token windows and average
         out = []
         for text in texts:
             ids = tokenizer(text, return_tensors="pt")["input_ids"][0]
@@ -99,8 +96,7 @@ def main():
 
     docs = [json.loads(line)["document"] for line in open(CORPUS)]
 
-    # encoding the whole book every run is slow, so cache the doc embeddings.
-    # if the corpus size changed we just rebuild (cheap safety check).
+    # cache doc embeddings so we dont re-encode the book every run
     cache = f"data/processed/corpus_emb_{args.model}.npy"
     if os.path.exists(cache) and np.load(cache).shape[0] == len(docs):
         doc_emb = np.load(cache)

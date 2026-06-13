@@ -15,6 +15,32 @@ SECTION = re.compile(r"^\d+(\.\d+)+\.?\s*$")  # 2.1, 2.3.1 etc
 SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
 YEAR = re.compile(r"^(19|20)\d\d[.,;:]?$")  # 2017, 1999. etc
 NUMBER = re.compile(r"^\d+[.,;:]?$")
+BRACKET_CHAR = re.compile(r"\[([a-z])\]", re.I)
+
+
+def is_spaced_title(line):
+    toks = line.split()
+    if len(toks) < 2:
+        return False
+    singles = sum(1 for t in toks if len(t) == 1 and t.isalpha())
+    return singles >= len(toks) * 0.5
+
+
+def fix_pdf_spacing(text):
+    text = BRACKET_CHAR.sub(r"\1", text)
+    skip = {"a", "i", "o"}
+    toks = text.split()
+    out = []
+    i = 0
+    while i < len(toks):
+        if (len(toks[i]) == 1 and toks[i].isalpha() and toks[i] not in skip
+                and i + 1 < len(toks) and len(toks[i + 1]) > 1):
+            out.append(toks[i] + toks[i + 1])
+            i += 2
+        else:
+            out.append(toks[i])
+            i += 1
+    return " ".join(out)
 
 
 def looks_like_junk(line):
@@ -24,6 +50,8 @@ def looks_like_junk(line):
     if SECTION.match(s):
         return False  # dont drop section numbers
     if HEADER.search(s) or CHAPTER_BANNER.search(s) or COPYRIGHT.search(s):
+        return True
+    if is_spaced_title(s):
         return True
     # page nums and random short lines
     if len(s.split()) <= 2 and not s.endswith("."):
@@ -66,9 +94,6 @@ def split_sentences(text):
 
 
 def is_reference_junk(chunk):
-    # whole book has a big index at the end + bibliography after every chapter.
-    # those turn into chunks full of years ("2017.") and bare page numbers, which
-    # are useless to search. drop them so the demo corpus is only real content.
     toks = chunk.split()
     years = sum(1 for w in toks if YEAR.match(w))
     nums = sum(1 for w in toks if NUMBER.match(w))
@@ -111,7 +136,7 @@ def build_jm(out_path):
     for section in read_sections():
         sents = split_sentences(section)
         for chunk in merge_sentences(sents):
-            chunk = clean_text(chunk)
+            chunk = fix_pdf_spacing(clean_text(chunk))
             wc = len(chunk.split())
             if MIN_WORDS <= wc <= MAX_WORDS and not is_reference_junk(chunk):
                 rows.append({"document": chunk, "doc_id": f"jm-{len(rows)}"})
