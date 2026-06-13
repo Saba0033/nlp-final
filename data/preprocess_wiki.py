@@ -15,7 +15,7 @@ def build_wiki(cfg):
     max_words = cfg["data"]["max_words"]
     n_articles = cfg["data"]["wiki_articles"]
 
-    print("downlaoding wikipedia...")
+    print("downlaoding wikipedia")
     stream = load_dataset(
         "wikimedia/wikipedia", "20231101.simple", split="train", streaming=True
     )

@@ -12,7 +12,6 @@ def load_cfg():
 
 
 def clean_text(text):
-    # no pretrained tokenizer, so we lowercase ourselves + fix extra spcaes
     return re.sub(r"\s+", " ", text).strip().lower()
 
 

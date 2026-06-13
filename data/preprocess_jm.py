@@ -76,7 +76,7 @@ def is_reference_junk(chunk):
 
 
 def merge_sentences(sentences):
-    # glue sentences until we hit ~200-300 words
+    # glue sentences until we hit 200-300 words
     chunks = []
     buf = []
     n = 0

@@ -13,7 +13,7 @@ import json
 import os
 import warnings
 
-warnings.filterwarnings("ignore")  # quiet the pytorch nested-tensor notice so demo output stays clean
+warnings.filterwarnings("ignore")
 
 import numpy as np
 import torch
@@ -21,13 +21,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoTokenizer, logging
 
-logging.set_verbosity_error()  # hide the "longer than 512 tokens" warning, we window it ourselves
+logging.set_verbosity_error()
 
 CORPUS = "data/processed/corpus.jsonl"
 VOCAB_SIZE, MAX_LEN, PROJ = 30522, 128, 128
 
-# each checkpoint was trained with its own architecure, so we cant share one
-# config - load the matching one or state_dict shapes wont line up
 MODELS = {
     "squad_v2": dict(embed=256, heads=4, layers=2, ffn=512, dropout=0.3,
                      ckpt="checkpoints/squad_v2/best_model.pt"),
@@ -39,7 +37,6 @@ MODELS = {
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-
 
 class TransformerEncoder(nn.Module):
     def __init__(self, cfg):
@@ -71,7 +68,7 @@ class TransformerEncoder(nn.Module):
 
     @torch.no_grad()
     def encode_long(self, texts):
-        # j&m chunks are 200-300 words = way more than 128 tokens. if we just
+        # j&m chunks are 200-300 words, way more than 128 tokens. if we just
         # truncate we throw away half the chunk. instead we cut each chunk into
         # 128-token windows, encode each window, and average them. this way the
         # whole chunk gets represented, not only its beginning.
